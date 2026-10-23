@@ -1,0 +1,589 @@
+// spotini's window: the title bar, and the screens before and after logging in.
+
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import { Theme, Beat, PaneStyle, Label, Mark, PrimaryButton, LinkButton, Paragraph, TextField, Card, Logo, Centered } from "widgets.slint";
+import { SourceRow, TrackRow, RowKind, LibraryPane, TrackTable, PlayerPane } from "library.slint";
+import { SideTab, LyricLine, QueueTrack, SidePane } from "side.slint";
+import { PaletteChoice, MenuItem, ContextMenu, SettingsPanel, NewPlaylistPanel, HelpPanel } from "overlays.slint";
+
+export { Theme, PaneStyle, SourceRow, TrackRow, RowKind, SideTab, LyricLine, QueueTrack, PaletteChoice, MenuItem }
+
+/// A caption button with a drawn 10 px glyph, as Windows draws its own.
+component WindowButton inherits Rectangle {
+    /// Path commands on a 10×10 box.
+    in property <string> glyph;
+    in property <bool> close;
+    callback clicked;
+    width: 46px;
+    background: area.has-hover ? (root.close ? #c42b1c : Theme.fg.with-alpha(0.1)) : transparent;
+    Path {
+        width: 10px;
+        height: 10px;
+        viewbox-width: 10;
+        viewbox-height: 10;
+        stroke: area.has-hover ? (root.close ? #ffffff : Theme.fg) : Theme.muted;
+        stroke-width: 1px;
+        commands: root.glyph;
+    }
+    area := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component TitleBar inherits Rectangle {
+    in property <bool> maximized;
+    callback drag();
+    callback toggle-maximized();
+    callback minimize();
+    callback close();
+    height: 30px;
+    // Glass lets the glow show through.
+    background: Theme.pane-style == PaneStyle.glass ? transparent : Theme.bg;
+
+    TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                root.drag();
+            }
+        }
+        double-clicked => { root.toggle-maximized(); }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 10px;
+        Mark { y: (parent.height - self.height) / 2; }
+        Label { text: "spotini"; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+        Rectangle { horizontal-stretch: 1; }
+        WindowButton { glyph: "M0 5.5h10"; clicked => { root.minimize(); } }
+        WindowButton {
+            glyph: root.maximized ? "M2.5 2.5V0.5h7v7h-2M0.5 2.5h7v7h-7z" : "M0.5 0.5h9v9h-9z";
+            clicked => { root.toggle-maximized(); }
+        }
+        WindowButton { glyph: "M0.5 0.5l9 9M9.5 0.5l-9 9"; close: true; clicked => { root.close(); } }
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+}
+
+export enum Screen { checking, logged-out, logging-in, setup, main }
+
+export enum Overlay { none, settings, help, new-playlist }
+
+export component AppWindow inherits Window {
+    // The taskbar shows it.
+    title: root.now-playing == "" ? "spotini" : root.now-playing + " — spotini";
+    icon: @image-url("../icon.ico");
+    no-frame: true;
+    background: Theme.bg;
+    default-font-family: "JetBrains Mono";
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    // Fixed limits: left to the content, a long song title or the like would make
+    // Slint resize or cap the window.
+    min-width: 720px;
+    min-height: 480px;
+    max-width: 100000px;
+    max-height: 100000px;
+
+    in property <string> now-playing;
+    in property <bool> is-maximized;
+    /// Off in the web demo, whose page draws its own window frame.
+    in property <bool> title-bar-visible: true;
+    in property <Screen> screen: Screen.checking;
+    in property <string> error;
+    /// The toast is news, not an error.
+    in property <bool> error-is-notice;
+    in property <string> username;
+    // Setup.
+    in property <bool> setup-connect-step;
+    in property <bool> busy;
+    in property <string> redirect-uri;
+    in-out property <string> client-id;
+
+    // Library.
+    in property <[SourceRow]> sources;
+    in property <bool> sources-loading;
+    in property <int> open-source: -1;
+    in property <string> view-title;
+    in property <string> view-detail;
+    in property <[TrackRow]> tracks;
+    in property <bool> tracks-loading;
+    in property <string> tracks-error;
+    in property <string> empty-text;
+    in property <bool> can-go-back;
+    in property <int> current-index: -1;
+    in-out property <int> cursor: -1;
+    in property <int> selection-count;
+    /// Which pane has focus: 0 library, 1 tracks, 2 the side panel.
+    in-out property <int> focused-pane: 1;
+    // Player.
+    in property <image> cover;
+    in property <string> np-title;
+    in property <string> np-subtitle;
+    in property <string> np-source;
+    in property <bool> has-track;
+    in property <bool> has-queue;
+    in property <bool> is-playing;
+    in property <int> position-ms;
+    // The marks step with the clock, which repaints anyway, so they cost no frames of their own.
+    changed position-ms => {
+        if (root.is-playing) {
+            Beat.step += 1;
+        }
+    }
+    in property <int> duration-ms;
+    in-out property <float> volume;
+    in property <bool> shuffle;
+    in property <string> repeat: "off";
+    in property <int> liked: -1;
+    in property <bool> radio-on;
+    in property <bool> radio-loading;
+    // Side panel.
+    in property <SideTab> side-tab;
+    in property <[LyricLine]> lyric-lines;
+    in property <bool> lyrics-synced;
+    in property <int> current-line: -1;
+    in property <string> lyrics-message;
+    in property <bool> lyrics-error;
+    in property <string> lyrics-key;
+    in property <QueueTrack> queue-now;
+    in property <[QueueTrack]> upcoming;
+    in-out property <int> queue-cursor: -1;
+
+    callback open-source-at(int);
+    callback activate-row(int);
+    callback select-row(int, bool, bool);
+    /// Right-clicks; the menu then shows at menu-x, menu-y.
+    callback row-menu(int);
+    callback queue-menu(int);
+    callback remove-queued(int);
+    callback new-playlist();
+    callback create-playlist(string);
+    // The right-click menu.
+    in property <[MenuItem]> menu-items;
+    in-out property <bool> menu-open;
+    in-out property <length> menu-x;
+    in-out property <length> menu-y;
+    callback menu-chosen(int);
+    in property <string> new-playlist-hint;
+    callback set-side-tab(SideTab);
+    callback seek-line(int);
+    callback jump(int);
+    callback open-artist(int);
+    callback open-album(int);
+    callback back();
+    callback search(string);
+    callback previous();
+    callback toggle-play();
+    callback next();
+    callback toggle-shuffle();
+    callback cycle-repeat();
+    callback toggle-like();
+    callback radio();
+    callback go-to-playing();
+    callback seek(int);
+    callback set-volume(float);
+
+    public function reveal-track(i: int) {
+        table.reveal(i);
+    }
+
+    public function focus-keys() {
+        keys.focus();
+    }
+
+
+    // Settings and help.
+    in-out property <Overlay> overlay;
+    in property <[PaletteChoice]> palettes;
+    in property <int> palette;
+    in property <[color]> accents;
+    in property <int> accent: -1;
+    in property <string> custom-accent;
+    in property <string> custom-bg;
+    in property <string> custom-fg;
+    in property <string> custom-palette-accent;
+    in property <bool> cover-colors;
+    in property <int> font-size-index: 1;
+    in property <bool> side-visible: true;
+    in-out property <int> library-cursor;
+    callback choose-palette(int);
+    callback choose-panes(PaneStyle);
+    callback choose-accent(int);
+    callback choose-custom-accent(string);
+    callback choose-custom-color(int, string);
+    callback toggle-cover-colors();
+    callback choose-font-size(int);
+    /// A key for the shortcuts, with special keys named ("Escape", "Up", …). True if it was used.
+    callback key(string, bool) -> bool;
+
+    public function focus-search() {
+        library.focus-search();
+    }
+
+    callback drag();
+    callback resize(int);
+    callback toggle-maximized();
+    callback minimize();
+    callback close-window();
+    callback login();
+    callback cancel-login();
+    callback logout();
+    callback open-dashboard();
+    callback save-client-id();
+    callback connect-library();
+    callback change-client-id();
+
+    // Glass: soft glows behind everything, title bar included.
+    if Theme.pane-style == PaneStyle.glass: Rectangle {
+        Rectangle {
+            x: root.width * 0.1 - self.width / 2;
+            y: root.height * 1.1 - self.height / 2;
+            width: 1800px;
+            height: 1800px;
+            background: @radial-gradient(circle, Theme.glow 0%, transparent 60%);
+        }
+        Rectangle {
+            x: root.width - self.width / 2;
+            y: -root.height * 0.1 - self.height / 2;
+            width: 1400px;
+            height: 1400px;
+            background: @radial-gradient(circle, Theme.glow2 0%, transparent 60%);
+        }
+    }
+
+    VerticalLayout {
+        if root.title-bar-visible: TitleBar {
+            maximized: root.is-maximized;
+            drag => { root.drag(); }
+            toggle-maximized => { root.toggle-maximized(); }
+            minimize => { root.minimize(); }
+            close => { root.close-window(); }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+
+            if root.screen != Screen.setup && root.screen != Screen.main: Card {
+                width: min(460px, parent.width - 32px);
+                title: "SPOTINI";
+                Logo { }
+                if root.screen == Screen.checking: Label { text: "connecting…"; color: Theme.dim; horizontal-alignment: center; }
+                if root.screen == Screen.logging-in: Label { text: "finish logging in in your browser…"; color: Theme.dim; horizontal-alignment: center; }
+                if root.screen == Screen.logging-in: Centered {
+                    LinkButton { text: "cancel"; clicked => { root.cancel-login(); } }
+                }
+                if root.screen == Screen.logged-out: Label { text: "a tiny player for your Spotify Premium account"; color: Theme.muted; horizontal-alignment: center; }
+                if root.screen == Screen.logged-out: Centered {
+                    PrimaryButton { text: "log in with spotify"; clicked => { root.login(); } }
+                }
+                if root.error != "": Paragraph { text: root.error; color: Theme.error; }
+            }
+
+            if root.screen == Screen.setup: Card {
+                width: min(460px, parent.width - 32px);
+                title: root.setup-connect-step ? "SETUP · 2/2 CONNECT" : "SETUP · 1/2 CLIENT ID";
+                Logo { }
+                if !root.setup-connect-step: Paragraph {
+                    text: "To read your playlists, spotini needs your own Spotify app. Create one at the Spotify developer dashboard with this redirect URI and Web API selected:";
+                }
+                if !root.setup-connect-step: Centered {
+                    LinkButton { text: "developer.spotify.com/dashboard"; clicked => { root.open-dashboard(); } }
+                }
+                if !root.setup-connect-step: Centered {
+                    Rectangle {
+                        width: uri.preferred-width + 20px;
+                        height: 26px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        uri := Label { text: root.redirect-uri; color: Theme.accent; }
+                    }
+                }
+                if !root.setup-connect-step: Paragraph { text: "Then paste its Client ID here:"; }
+                if !root.setup-connect-step: TextField {
+                    placeholder: "Client ID";
+                    text <=> root.client-id;
+                    accepted => { root.save-client-id(); }
+                }
+                if !root.setup-connect-step: Centered {
+                    PrimaryButton {
+                        text: "Continue";
+                        enabled: root.client-id != "";
+                        clicked => { root.save-client-id(); }
+                    }
+                }
+                if root.setup-connect-step: Paragraph { text: "Now allow spotini to read your library."; }
+                if root.setup-connect-step: Centered {
+                    PrimaryButton {
+                        text: root.busy ? "Finish in your browser…" : "Connect library";
+                        enabled: !root.busy;
+                        clicked => { root.connect-library(); }
+                    }
+                }
+                if root.setup-connect-step && root.busy: Centered {
+                    LinkButton { text: "cancel"; clicked => { root.cancel-login(); } }
+                }
+                if root.setup-connect-step: Centered {
+                    LinkButton { text: "Change Client ID"; enabled: !root.busy; clicked => { root.change-client-id(); } }
+                }
+                if root.error != "": Paragraph { text: root.error; color: Theme.error; }
+            }
+
+            // Kept, not rebuilt, so the track table can be scrolled from outside.
+            // Takes the keys while nothing else (the search box) has them.
+            keys := FocusScope {
+                visible: root.screen == Screen.main;
+                key-pressed(event) => {
+                    if (event.modifiers.control || event.modifiers.alt || event.modifiers.meta) {
+                        return reject;
+                    }
+                    let name = event.text == Key.Escape ? "Escape"
+                        : event.text == Key.Backspace ? "Backspace"
+                        : event.text == Key.Tab || event.text == Key.Backtab ? "Tab"
+                        : event.text == Key.Return ? "Enter"
+                        : event.text == Key.UpArrow ? "Up"
+                        : event.text == Key.DownArrow ? "Down"
+                        : event.text == Key.LeftArrow ? "Left"
+                        : event.text == Key.RightArrow ? "Right"
+                        : event.text == Key.PageUp ? "PageUp"
+                        : event.text == Key.PageDown ? "PageDown"
+                        : event.text == Key.Home ? "Home"
+                        : event.text == Key.End ? "End"
+                        : event.text == Key.Delete ? "Delete"
+                        : event.text;
+                    return root.key(name, event.modifiers.shift || event.text == Key.Backtab) ? accept : reject;
+                }
+                VerticalLayout {
+                    padding-top: Theme.pane-style == PaneStyle.minimal ? 0px : 14px;
+                    padding-left: Theme.gap;
+                    padding-right: Theme.gap;
+                    padding-bottom: Theme.gap;
+                    spacing: Theme.gap;
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        spacing: Theme.gap;
+                        library := LibraryPane {
+                            // Always the row's full height, whatever is inside right now.
+                            min-height: 0px;
+                            max-height: 100000px;
+                            width: 240px;
+                            cursor <=> root.library-cursor;
+                            sources: root.sources;
+                            is-playing: root.is-playing;
+                            loading: root.sources-loading;
+                            open-index: root.open-source;
+                            focused: root.focused-pane == 0;
+                            take-focus => {
+                                root.focused-pane = 0;
+                                keys.focus();
+                            }
+                            open(i) => { root.open-source-at(i); }
+                            new-playlist => { root.new-playlist(); }
+                            settings => { root.overlay = Overlay.settings; }
+                            help => { root.overlay = Overlay.help; }
+                            search(query) => {
+                                root.search(query);
+                                keys.focus();
+                            }
+                            leave-search => { keys.focus(); }
+                        }
+                        if Theme.pane-style == PaneStyle.minimal: Rectangle { width: 1px; background: Theme.border; }
+                        table := TrackTable {
+                            // Always the row's full height, whatever is inside right now.
+                            min-height: 0px;
+                            max-height: 100000px;
+                            horizontal-stretch: 1;
+                            title: root.view-title;
+                            detail: root.view-detail;
+                            tracks: root.tracks;
+                            loading: root.tracks-loading;
+                            error: root.tracks-error;
+                            current-index: root.current-index;
+                            is-playing: root.is-playing;
+                            cursor <=> root.cursor;
+                            focused: root.focused-pane == 1;
+                            take-focus => {
+                                root.focused-pane = 1;
+                                keys.focus();
+                            }
+                            empty-text: root.empty-text;
+                            can-go-back: root.can-go-back;
+                            selection-count: root.selection-count;
+                            select(i, ctrl, shift) => { root.select-row(i, ctrl, shift); }
+                            row-menu(i, x, y) => {
+                                root.menu-x = x;
+                                root.menu-y = y;
+                                root.row-menu(i);
+                            }
+                            activate(i) => { root.activate-row(i); }
+                            open-artist(i) => { root.open-artist(i); }
+                            open-album(i) => { root.open-album(i); }
+                            back => { root.back(); }
+                        }
+                        if root.side-visible && Theme.pane-style == PaneStyle.minimal: Rectangle { width: 1px; background: Theme.border; }
+                        if root.side-visible: SidePane {
+                            // Always the row's full height, whatever is inside right now.
+                            min-height: 0px;
+                            max-height: 100000px;
+                            // The web version's minmax(220px, 300px) column.
+                            min-width: 220px;
+                            preferred-width: 300px;
+                            max-width: 300px;
+                            horizontal-stretch: 0;
+                            tab: root.side-tab;
+                            focused: root.focused-pane == 2;
+                            lines: root.lyric-lines;
+                            synced: root.lyrics-synced;
+                            current-line: root.current-line;
+                            lyrics-message: root.lyrics-message;
+                            lyrics-error: root.lyrics-error;
+                            lyrics-key: root.lyrics-key;
+                            has-current: root.has-queue;
+                            now: root.queue-now;
+                            upcoming: root.upcoming;
+                            is-playing: root.is-playing;
+                            queue-cursor <=> root.queue-cursor;
+                            tab-changed(tab) => { root.set-side-tab(tab); }
+                            take-focus => {
+                                root.focused-pane = 2;
+                                keys.focus();
+                            }
+                            seek-line(i) => { root.seek-line(i); }
+                            jump(i) => { root.jump(i); }
+                            remove(i) => { root.remove-queued(i); }
+                            queue-menu(i, x, y) => {
+                                root.menu-x = x;
+                                root.menu-y = y;
+                                root.queue-menu(i);
+                            }
+                        }
+                    }
+                    PlayerPane {
+                        cover: root.cover;
+                        title: root.np-title;
+                        subtitle: root.np-subtitle;
+                        source: root.np-source;
+                        has-track: root.has-track;
+                        has-queue: root.has-queue;
+                        is-playing: root.is-playing;
+                        position-ms: root.position-ms;
+                        duration-ms: root.duration-ms;
+                        volume <=> root.volume;
+                        shuffle: root.shuffle;
+                        repeat: root.repeat;
+                        liked: root.liked;
+                        radio-on: root.radio-on;
+                        radio-loading: root.radio-loading;
+                        previous => { root.previous(); }
+                        toggle-play => { root.toggle-play(); }
+                        next => { root.next(); }
+                        toggle-shuffle => { root.toggle-shuffle(); }
+                        cycle-repeat => { root.cycle-repeat(); }
+                        toggle-like => { root.toggle-like(); }
+                        radio => { root.radio(); }
+                        go-to-playing => { root.go-to-playing(); }
+                        seek(ms) => { root.seek(ms); }
+                        set-volume(level) => { root.set-volume(level); }
+                    }
+                }
+            }
+
+            if root.screen == Screen.main && root.overlay == Overlay.settings: SettingsPanel {
+                palettes: root.palettes;
+                palette: root.palette;
+                panes: Theme.pane-style;
+                accents: root.accents;
+                accent: root.accent;
+                custom-accent: root.custom-accent;
+                custom-bg: root.custom-bg;
+                custom-fg: root.custom-fg;
+                custom-palette-accent: root.custom-palette-accent;
+                cover-colors: root.cover-colors;
+                font-size: root.font-size-index;
+                username: root.username;
+                close => {
+                    root.overlay = Overlay.none;
+                    keys.focus();
+                }
+                choose-palette(i) => { root.choose-palette(i); }
+                choose-panes(style) => { root.choose-panes(style); }
+                choose-accent(i) => { root.choose-accent(i); }
+                choose-custom-accent(text) => {
+                    root.choose-custom-accent(text);
+                    keys.focus();
+                }
+                choose-custom-color(which, text) => { root.choose-custom-color(which, text); }
+                toggle-cover-colors => { root.toggle-cover-colors(); }
+                choose-font-size(i) => { root.choose-font-size(i); }
+                change-client-id => {
+                    root.overlay = Overlay.none;
+                    root.change-client-id();
+                }
+                logout => {
+                    root.overlay = Overlay.none;
+                    root.logout();
+                }
+            }
+            if root.screen == Screen.main && root.overlay == Overlay.new-playlist: NewPlaylistPanel {
+                box-width: 420px;
+                hint: root.new-playlist-hint;
+                create(name) => { root.create-playlist(name); }
+                close => {
+                    root.overlay = Overlay.none;
+                    keys.focus();
+                }
+            }
+            if root.screen == Screen.main && root.overlay == Overlay.help: HelpPanel {
+                box-width: 520px;
+                close => {
+                    root.overlay = Overlay.none;
+                    keys.focus();
+                }
+            }
+
+            // Errors from playback, above the player.
+            if root.screen == Screen.main && root.error != "": Rectangle {
+                y: parent.height - 81px - 15px - self.height;
+                width: min(toast.preferred-width + 24px, 640px, parent.width - 32px);
+                height: Theme.line + 12px;
+                border-width: 1px;
+                border-color: root.error-is-notice ? Theme.accent : Theme.error;
+                border-radius: Theme.radius / 2;
+                background: Theme.bg;
+                toast := Label { x: 12px; width: parent.width - 24px; text: root.error; }
+            }
+        }
+    }
+
+    if root.menu-open: ContextMenu {
+        items: root.menu-items;
+        at-x: root.menu-x;
+        at-y: root.menu-y;
+        chosen(i) => { root.menu-chosen(i); }
+        close => { root.menu-open = false; }
+    }
+
+    // Edges for resizing the frameless window: n, e, s, w, ne, se, sw, nw.
+    property <length> edge: 5px;
+    for side[i] in [
+        { x: edge, y: 0, w: root.width - 2 * edge, h: edge, cursor: MouseCursor.ns-resize },
+        { x: root.width - edge, y: edge, w: edge, h: root.height - 2 * edge, cursor: MouseCursor.ew-resize },
+        { x: edge, y: root.height - edge, w: root.width - 2 * edge, h: edge, cursor: MouseCursor.ns-resize },
+        { x: 0, y: edge, w: edge, h: root.height - 2 * edge, cursor: MouseCursor.ew-resize },
+        { x: root.width - edge, y: 0, w: edge, h: edge, cursor: MouseCursor.nesw-resize },
+        { x: root.width - edge, y: root.height - edge, w: edge, h: edge, cursor: MouseCursor.nwse-resize },
+        { x: 0, y: root.height - edge, w: edge, h: edge, cursor: MouseCursor.nesw-resize },
+        { x: 0, y: 0, w: edge, h: edge, cursor: MouseCursor.nwse-resize },
+    ]: TouchArea {
+        x: side.x;
+        y: side.y;
+        width: side.w;
+        height: side.h;
+        enabled: !root.is-maximized;
+        mouse-cursor: side.cursor;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                root.resize(i);
+            }
+        }
+    }
+}

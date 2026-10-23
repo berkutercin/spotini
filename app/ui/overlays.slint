@@ -1,0 +1,419 @@
+// The settings and keyboard help, shown over the library.
+
+import { Theme, Label, TextButton, PaneStyle, PaneTitle } from "widgets.slint";
+
+export struct PaletteChoice {
+    name: string,
+    bg: color,
+    fg: color,
+    accent: color,
+}
+
+export struct MenuItem {
+    label: string,
+    enabled: bool,
+    /// A divider line instead of an item.
+    separator: bool,
+}
+
+/// A right-click menu at a point in the window, kept inside it; any click
+/// outside closes it.
+export component ContextMenu inherits Rectangle {
+    in property <[MenuItem]> items;
+    in property <length> at-x;
+    in property <length> at-y;
+    callback chosen(int);
+    callback close();
+    TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.close();
+            }
+        }
+    }
+    Rectangle {
+        width: 30 * Theme.ch;
+        // Long lists (all the playlists) scroll.
+        height: min(list.preferred-height, root.height - 8px);
+        x: max(4px, min(root.at-x, root.width - self.width - 4px));
+        y: max(4px, min(root.at-y, root.height - self.height - 4px));
+        background: Theme.bg;
+        border-width: 1px;
+        border-color: Theme.accent;
+        border-radius: Theme.radius / 2;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: #00000080;
+        // Clicks inside stay inside.
+        TouchArea { }
+        Flickable {
+            list := VerticalLayout {
+                width: 30 * Theme.ch;
+                padding: 4px;
+                for item[i] in root.items: Rectangle {
+                    height: item.separator ? 9px : Theme.line + 6px;
+                    background: area.has-hover && item.enabled && !item.separator ? Theme.hover : transparent;
+                    if item.separator: Rectangle {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    if !item.separator: Label {
+                        x: 10px;
+                        width: parent.width - 20px;
+                        text: item.label;
+                        color: !item.enabled ? Theme.dim : area.has-hover ? Theme.accent : Theme.fg;
+                    }
+                    area := TouchArea {
+                        enabled: item.enabled && !item.separator;
+                        clicked => { root.chosen(i); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The dimmed backdrop and the framed box in its middle; a click outside closes it.
+component Overlay inherits Rectangle {
+    in property <string> title;
+    in property <length> box-width: 560px;
+    callback close();
+    background: Theme.bg.with-alpha(0.85);
+    TouchArea {
+        clicked => { root.close(); }
+    }
+    box := Rectangle {
+        width: min(root.box-width, root.width - 48px);
+        height: min(content.preferred-height, root.height - 48px);
+        background: Theme.pane-style == PaneStyle.glass ? Theme.bg.with-alpha(0.8) : Theme.bg;
+        border-width: 1px;
+        border-color: Theme.accent;
+        border-radius: Theme.radius;
+        clip: true;
+        // Clicks inside stay inside.
+        TouchArea { }
+        content := VerticalLayout {
+            padding-top: 18px;
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-bottom: 14px;
+            PaneTitle {
+                text: root.title;
+                detail: "esc to close";
+                focused: true;
+                top: 18px;
+            }
+            @children
+        }
+    }
+}
+
+component Heading inherits Label {
+    height: Theme.line + 20px;
+    x: 6px;
+    vertical-alignment: bottom;
+    color: Theme.dim;
+    font-size: Theme.font-size * 0.85;
+    letter-spacing: 0.12 * Theme.font-size * 0.85;
+}
+
+/// "[x] label", optionally with a swatch in front of the label.
+component Choice inherits Rectangle {
+    in property <bool> selected;
+    in property <string> text;
+    in property <[color]> swatch;
+    callback clicked;
+    width: row.preferred-width;
+    height: Theme.line + 4px;
+    row := HorizontalLayout {
+        spacing: 8px;
+        Label {
+            horizontal-stretch: 0;
+            text: root.selected ? "[x]" : "[ ]";
+            color: root.selected ? Theme.accent : Theme.dim;
+        }
+        if root.swatch.length > 0: HorizontalLayout {
+            alignment: center;
+            for color in root.swatch: Rectangle {
+                width: 10px;
+                height: 14px;
+                y: (parent.height - self.height) / 2;
+                background: color;
+            }
+        }
+        Label {
+            horizontal-stretch: 0;
+            text: root.text;
+            color: root.selected || area.has-hover ? Theme.fg : Theme.muted;
+        }
+    }
+    area := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A round colour button; ringed when chosen.
+component Dot inherits Rectangle {
+    in property <color> fill;
+    in property <bool> selected;
+    callback clicked;
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    border-width: root.selected ? 2px : 0px;
+    border-color: Theme.fg;
+    Rectangle {
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: root.fill;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A "#rrggbb" box; enter applies it.
+component HexField inherits Rectangle {
+    in property <string> text;
+    callback accepted(string);
+    width: 9 * Theme.ch;
+    height: Theme.line + 4px;
+    input := TextInput {
+        text: root.text;
+        color: Theme.fg;
+        font-size: Theme.font-size;
+        vertical-alignment: center;
+        single-line: true;
+        accepted => { root.accepted(self.text); }
+    }
+    if input.text == "": Label { text: "#rrggbb"; color: Theme.dim; }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: input.has-focus ? Theme.accent : Theme.border;
+    }
+}
+
+component Choices inherits HorizontalLayout {
+    padding-left: 6px;
+    padding-right: 6px;
+    spacing: 16px;
+    alignment: start;
+}
+
+export component SettingsPanel inherits Overlay {
+    in property <[PaletteChoice]> palettes;
+    in property <int> palette;
+    in property <PaneStyle> panes;
+    in property <[color]> accents;
+    /// -1 for the palette's own accent, -2 for a custom one.
+    in property <int> accent: -1;
+    in property <string> custom-accent;
+    /// The custom palette's colours; it is the last of `palettes`.
+    in property <string> custom-bg;
+    in property <string> custom-fg;
+    in property <string> custom-palette-accent;
+    in property <bool> cover-colors;
+    in property <int> font-size: 1;
+    in property <string> username;
+    callback choose-palette(int);
+    /// 0 background, 1 text, 2 accent.
+    callback choose-custom-color(int, string);
+    callback choose-panes(PaneStyle);
+    callback choose-accent(int);
+    callback choose-custom-accent(string);
+    callback toggle-cover-colors();
+    callback choose-font-size(int);
+    callback change-client-id();
+    callback logout();
+    title: "Settings";
+
+    Flickable {
+        // The box grows with this up to the window's height, then scrolls.
+        preferred-height: body.preferred-height;
+        body := VerticalLayout {
+            Heading { text: "PALETTE"; height: Theme.line; }
+            for p[i] in root.palettes: Choices {
+                Choice {
+                    text: p.name;
+                    swatch: [p.bg, p.fg, p.accent];
+                    selected: i == root.palette;
+                    clicked => { root.choose-palette(i); }
+                }
+            }
+            Choices {
+                padding-left: 6px + 4 * Theme.ch;
+                spacing: 8px;
+                for field[k] in [
+                    { name: "bg", value: root.custom-bg },
+                    { name: "text", value: root.custom-fg },
+                    { name: "accent", value: root.custom-palette-accent },
+                ]: HorizontalLayout {
+                    spacing: 6px;
+                    Label { horizontal-stretch: 0; text: field.name; color: Theme.dim; }
+                    HexField {
+                        text: field.value;
+                        accepted(text) => { root.choose-custom-color(k, text); }
+                    }
+                }
+            }
+            Choices {
+                padding-left: 6px + 4 * Theme.ch;
+                Label { text: "enter to apply; picks the custom palette"; color: Theme.dim; }
+            }
+
+            Heading { text: "PANES"; }
+            for style in [
+                { id: PaneStyle.minimal, name: "Minimal", hint: "thin dividers" },
+                { id: PaneStyle.boxed, name: "Boxed", hint: "framed panes" },
+                { id: PaneStyle.glass, name: "Glass", hint: "tinted panes" },
+            ]: Choices {
+                spacing: 8px;
+                Choice {
+                    text: style.name;
+                    selected: style.id == root.panes;
+                    clicked => { root.choose-panes(style.id); }
+                }
+                Label { text: style.hint; color: Theme.dim; }
+            }
+
+            Heading { text: "ACCENT"; }
+            Choices {
+                Choice {
+                    text: "palette default";
+                    selected: root.accent == -1;
+                    clicked => { root.choose-accent(-1); }
+                }
+            }
+            Choices {
+                spacing: 10px;
+                for color[i] in root.accents: Dot {
+                    fill: color;
+                    selected: i == root.accent;
+                    clicked => { root.choose-accent(i); }
+                }
+            }
+            Choices {
+                spacing: 8px;
+                Label {
+                    horizontal-stretch: 0;
+                    text: root.accent == -2 ? "[x]" : "[ ]";
+                    color: root.accent == -2 ? Theme.accent : Theme.dim;
+                }
+                Label { horizontal-stretch: 0; text: "custom"; color: Theme.muted; }
+                HexField {
+                    text: root.custom-accent;
+                    accepted(text) => { root.choose-custom-accent(text); }
+                }
+                Label { text: "enter to apply"; color: Theme.dim; }
+            }
+            Choices {
+                Choice {
+                    text: "take accent and glow from the playing cover";
+                    selected: root.cover-colors;
+                    clicked => { root.toggle-cover-colors(); }
+                }
+            }
+
+            Heading { text: "TEXT SIZE"; }
+            Choices {
+                for size[i] in ["Small", "Normal", "Large"]: Choice {
+                    text: size;
+                    selected: i == root.font-size;
+                    clicked => { root.choose-font-size(i); }
+                }
+            }
+
+            Heading { text: "ACCOUNT"; }
+            Choices {
+                Label { text: "logged in as " + root.username; color: Theme.dim; }
+            }
+            Choices {
+                TextButton { text: "change client id…"; clicked => { root.change-client-id(); } }
+                TextButton { text: "log out"; clicked => { root.logout(); } }
+            }
+        }
+    }
+}
+
+/// Asks for a new playlist's name.
+export component NewPlaylistPanel inherits Overlay {
+    /// What happens to the selected tracks, if any: "and add 3 tracks to it".
+    in property <string> hint;
+    callback create(string);
+    title: "New playlist";
+    init => { name.focus(); }
+    VerticalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 6px;
+        spacing: 10px;
+        Rectangle {
+            height: Theme.line + 8px;
+            // Esc closes; keys typed here are text, not shortcuts.
+            FocusScope {
+                key-pressed(event) => {
+                    if (event.text == Key.Escape) {
+                        root.close();
+                    }
+                    return accept;
+                }
+                name := TextInput {
+                    color: Theme.fg;
+                    font-size: Theme.font-size;
+                    vertical-alignment: center;
+                    single-line: true;
+                    selection-background-color: Theme.accent.with-alpha(0.35);
+                    accepted => {
+                        if (self.text != "") {
+                            root.create(self.text);
+                        }
+                    }
+                }
+            }
+            if name.text == "": Label { text: "name…"; color: Theme.dim; }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.accent; }
+        }
+        Label { text: "enter to create" + root.hint; color: Theme.dim; }
+    }
+}
+
+export component HelpPanel inherits Overlay {
+    title: "Keyboard";
+    VerticalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 4px;
+        for shortcut in [
+            ["space", "play / pause"],
+            ["j k  ↓ ↑", "move"],
+            ["enter", "open / play"],
+            ["tab", "switch pane"],
+            ["/", "search"],
+            ["esc  backspace", "back"],
+            ["n  p", "next / previous"],
+            ["←  →", "seek 5 s"],
+            ["+  -", "volume"],
+            ["s  r", "shuffle / repeat"],
+            ["f", "like the playing track"],
+            ["o", "go to what's playing"],
+            ["R", "radio from the selected (or playing) song"],
+            ["e", "play the selected tracks next"],
+            ["shift ↓ ↑", "select several tracks (or ctrl / shift + click)"],
+            ["right-click", "track or queue menu"],
+            ["del", "remove from the queue (queue panel)"],
+            ["a  A", "album / artist of the selected track"],
+            ["l  q", "lyrics / queue panel (again to hide)"],
+            ["g  G", "top / bottom"],
+            [",", "settings"],
+            ["?", "this help"],
+        ]: HorizontalLayout {
+            spacing: 12px;
+            Label { width: 16 * Theme.ch; text: shortcut[0]; color: Theme.accent; }
+            Label { text: shortcut[1]; }
+        }
+    }
+}

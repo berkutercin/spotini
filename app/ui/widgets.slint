@@ -1,0 +1,396 @@
+// The theme and the small pieces every screen is built from.
+
+export enum PaneStyle { minimal, boxed, glass }
+
+export global Theme {
+    // Amber until the settings load; Rust sets them from the chosen palette.
+    in-out property <color> bg: #161616;
+    in-out property <color> fg: #e8e2d6;
+    in-out property <color> muted: #a09a8f;
+    in-out property <color> dim: #5f5b54;
+    in-out property <color> border: #2c2a27;
+    in-out property <color> hover: #1f1e1c;
+    in-out property <color> select: #262420;
+    in-out property <color> accent: #f5a524;
+    in-out property <color> error: #ff6b6b;
+    /// The glass style's background glows.
+    in-out property <color> glow: #f5a52438;
+    in-out property <color> glow2: #b4462840;
+    in-out property <PaneStyle> pane-style: PaneStyle.minimal;
+    in-out property <length> radius: 0px;
+    in-out property <length> font-size: 13px;
+    // One row of text, as the web version's 1.45 line height.
+    out property <length> line: self.font-size * 1.45;
+    // A monospace character's width.
+    out property <length> ch: self.font-size * 0.6;
+    /// A pane's fill: none for minimal, solid for boxed, tinted for glass.
+    out property <brush> panel: self.pane-style == PaneStyle.boxed ? self.bg : self.pane-style == PaneStyle.glass ? self.bg.with-alpha(0.55) : transparent;
+    /// Space above a pane's title; boxed titles sit on the frame instead.
+    out property <length> pane-pad: self.pane-style == PaneStyle.boxed ? 14px : 16px;
+    /// Space between panes: none for minimal, which draws dividers.
+    out property <length> gap: self.pane-style == PaneStyle.minimal ? 0px : 10px;
+}
+
+export component Label inherits Text {
+    color: Theme.fg;
+    font-size: Theme.font-size;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+/// A pane's frame, drawn by the pane style.
+export component Pane inherits Rectangle {
+    in property <bool> focused;
+    background: Theme.panel;
+    border-radius: Theme.radius;
+    border-width: Theme.pane-style == PaneStyle.minimal ? 0px : 1px;
+    border-color: Theme.pane-style == PaneStyle.boxed
+        ? (root.focused ? Theme.accent : Theme.border)
+        : (root.focused ? Theme.accent.with-alpha(0.5) : Theme.fg.with-alpha(0.1));
+}
+
+/// Text in a title's casing: capitals for minimal, as written for boxed, lower case for glass.
+export component TitleText inherits Text {
+    in property <string> words;
+    font-size: Theme.font-size * 0.85;
+    vertical-alignment: center;
+    overflow: elide;
+    text: Theme.pane-style == PaneStyle.minimal ? self.words.to-uppercase() : Theme.pane-style == PaneStyle.glass ? self.words.to-lowercase() : self.words;
+    letter-spacing: Theme.pane-style == PaneStyle.minimal ? 0.12 * self.font-size : Theme.pane-style == PaneStyle.glass ? 0.04 * self.font-size : 0px;
+}
+
+/// A pane's small title, in the accent colour while the pane has focus. Boxed
+/// panes show it on the frame; anything placed inside follows the detail.
+export component PaneTitle inherits Rectangle {
+    in property <string> text;
+    in property <string> detail;
+    in property <bool> focused;
+    /// How far below the frame's top edge this sits.
+    in property <length> top: Theme.pane-pad;
+    property <bool> boxed: Theme.pane-style == PaneStyle.boxed;
+    height: root.boxed ? 0px : row.preferred-height + 10px;
+    Rectangle {
+        x: 0;
+        y: root.boxed ? -root.top - self.height / 2 : 0px;
+        width: min(row.preferred-width, root.width);
+        height: row.preferred-height;
+        background: root.boxed ? Theme.bg : transparent;
+        row := HorizontalLayout {
+            padding-left: 6px;
+            padding-right: root.boxed ? 6px : 0px;
+            if root.text != "": TitleText {
+                words: root.text;
+                color: root.focused ? Theme.accent : Theme.dim;
+            }
+            if root.detail != "": Label {
+                text: " · " + root.detail;
+                color: Theme.dim;
+                font-size: Theme.font-size * 0.85;
+            }
+            @children
+        }
+    }
+}
+
+/// The logo mark: a prompt chevron and three level bars.
+export component Mark inherits Rectangle {
+    width: 16px;
+    height: 10px;
+    // The SVG's viewBox is 380×240 from (80, 130); 16 px across.
+    property <float> unit: 16 / 380;
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 80;
+        viewbox-y: 130;
+        viewbox-width: 380;
+        viewbox-height: 240;
+        stroke: Theme.accent;
+        stroke-width: 50 * unit * 1px;
+        stroke-line-cap: round;
+        MoveTo { x: 104; y: 172; }
+        LineTo { x: 188; y: 256; }
+        LineTo { x: 104; y: 340; }
+    }
+    for bar in [
+        { x: 236, top: 232, color: Theme.accent },
+        { x: 310, top: 152, color: Theme.accent },
+        { x: 384, top: 204, color: Theme.fg },
+    ]: Rectangle {
+        x: (bar.x - 80) * unit * 1px;
+        y: (bar.top - 130) * unit * 1px;
+        width: 50 * unit * 1px;
+        height: (340 - bar.top) * unit * 1px;
+        border-radius: self.width / 2;
+        background: bar.color;
+    }
+}
+
+export component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    property <bool> lit: area.has-hover && root.enabled;
+    width: label.preferred-width + 34px;
+    height: 30px;
+    border-width: 1px;
+    border-color: Theme.accent;
+    border-radius: Theme.radius / 2;
+    background: root.lit ? Theme.accent : transparent;
+    opacity: root.enabled ? 1 : 0.4;
+    label := Label {
+        text: root.text;
+        color: root.lit ? Theme.bg : Theme.accent;
+    }
+    area := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+export component LinkButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: label.preferred-width;
+    height: label.preferred-height + 2px;
+    opacity: root.enabled ? 1 : 0.4;
+    label := Label { y: 0; text: root.text; color: Theme.accent; }
+    Rectangle { y: label.preferred-height; height: 1px; background: Theme.accent; }
+    TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+/// Plain text that lights up in the accent colour on hover.
+export component TextButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <color> ink: Theme.muted;
+    in property <length> font-size: Theme.font-size;
+    in property <int> font-weight: 400;
+    callback clicked;
+    width: label.preferred-width;
+    height: Theme.line;
+    opacity: root.enabled ? 1 : 0.4;
+    label := Label {
+        width: parent.width;
+        text: root.text;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        color: area.has-hover && root.enabled ? Theme.accent : root.ink;
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+export enum Icon { previous, play, pause, next }
+
+/// A drawn icon, with optional text after it, that lights up like a TextButton.
+/// Drawn rather than ⏮▶❚❚⏭ text, whose look depends on the fonts at hand.
+export component IconButton inherits Rectangle {
+    in property <Icon> icon;
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <color> ink: Theme.muted;
+    in property <int> font-weight: 400;
+    callback clicked;
+    property <color> shown: area.has-hover && root.enabled ? Theme.accent : root.ink;
+    property <length> size: round(Theme.font-size * 0.8 / 1px) * 1px;
+    width: layout.preferred-width;
+    height: Theme.line;
+    opacity: root.enabled ? 1 : 0.4;
+    layout := HorizontalLayout {
+        spacing: Theme.ch * 0.8;
+        Rectangle {
+            width: root.size;
+            Path {
+                width: root.size;
+                height: root.size;
+                viewbox-width: 16;
+                viewbox-height: 16;
+                fill: root.shown;
+                commands: root.icon == Icon.previous ? "M2 2h2.5v12H2zM14 2v12L5 8z"
+                    : root.icon == Icon.next ? "M11.5 2H14v12h-2.5zM2 2v12l9-6z"
+                    : root.icon == Icon.pause ? "M3 2h3.5v12H3zM9.5 2H13v12H9.5z"
+                    : "M3 1.5v13L14 8z";
+            }
+        }
+        if root.text != "": Label {
+            text: root.text;
+            font-weight: root.font-weight;
+            color: root.shown;
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Paragraph inherits Text {
+    color: Theme.fg;
+    font-size: Theme.font-size;
+    wrap: word-wrap;
+    horizontal-alignment: center;
+}
+
+export component TextField inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> text <=> input.text;
+    callback accepted();
+    height: 30px;
+    forward-focus: input;
+    input := TextInput {
+        x: 2px;
+        width: parent.width - 4px;
+        color: Theme.fg;
+        font-size: Theme.font-size;
+        vertical-alignment: center;
+        selection-background-color: Theme.accent.with-alpha(0.35);
+        accepted => { root.accepted(); }
+    }
+    if input.text == "": Label {
+        x: 2px;
+        text: root.placeholder;
+        color: Theme.dim;
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: input.has-focus ? Theme.accent : Theme.border;
+    }
+}
+
+/// The centred card used before the library opens: a framed pane with a small title.
+export component Card inherits Rectangle {
+    in property <string> title;
+    height: content.preferred-height;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: Theme.radius;
+    Label {
+        x: 14px;
+        y: 10px;
+        height: self.preferred-height;
+        text: root.title;
+        color: Theme.accent;
+        font-size: Theme.font-size * 0.85;
+        letter-spacing: 1.5px;
+    }
+    content := VerticalLayout {
+        padding: 28px;
+        padding-top: 36px;
+        padding-bottom: 24px;
+        spacing: 14px;
+        alignment: center;
+        @children
+    }
+}
+
+export component Logo inherits Label {
+    text: "spotini";
+    font-size: Theme.font-size * 1.8;
+    font-weight: 700;
+    letter-spacing: -0.04 * Theme.font-size * 1.8;
+    color: Theme.accent;
+    horizontal-alignment: center;
+}
+
+export component Centered inherits HorizontalLayout {
+    alignment: center;
+}
+
+/// A clickable, draggable bar in the look of text: ━━━━●─────.
+export component Bar inherits Rectangle {
+    in property <float> fraction;
+    in property <bool> enabled: true;
+    /// While dragging.
+    callback changed(float);
+    /// On release.
+    callback committed(float);
+    property <float> shown: clamp(root.fraction, 0, 1);
+    // The knob is one character wide and travels the rest.
+    property <length> track: max(1px, root.width - Theme.ch);
+    property <bool> dragging;
+    height: Theme.line;
+    opacity: root.enabled ? 1 : 0.5;
+
+    function at(x: length) -> float {
+        return clamp(x / root.track, 0, 1);
+    }
+
+    // Drawn as shapes, not ─━● text: the web demo's fonts don't have those characters.
+    Rectangle {
+        x: 0;
+        width: root.track + Theme.ch / 2;
+        height: 1px;
+        background: Theme.border;
+    }
+    Rectangle {
+        x: 0;
+        width: root.shown * root.track + Theme.ch / 2;
+        height: 3px;
+        background: Theme.accent;
+    }
+    Rectangle {
+        x: root.shown * root.track + (Theme.ch - self.width) / 2;
+        width: round(Theme.font-size * 0.62 / 1px) * 1px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.accent;
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        pointer-event(event) => {
+            if (event.button != PointerEventButton.left) {
+                return;
+            }
+            if (event.kind == PointerEventKind.down) {
+                root.dragging = true;
+                root.changed(root.at(self.mouse-x));
+            } else if (event.kind == PointerEventKind.up && root.dragging) {
+                root.dragging = false;
+                root.committed(root.at(self.mouse-x));
+            }
+        }
+        moved => {
+            if (root.dragging) {
+                root.changed(root.at(self.mouse-x));
+            }
+        }
+    }
+}
+
+/// Three bars marking what's playing; they bounce while the music plays.
+/// The playing marks' shared beat, stepped by the app window with the clock.
+export global Beat {
+    in-out property <int> step;
+}
+
+export component PlayingMark inherits Rectangle {
+    in property <bool> playing;
+    property <[float]> heights: [0.3, 0.75, 1, 0.55, 0.85, 0.4, 0.65, 0.95];
+    width: 7px;
+    height: Theme.font-size * 0.8;
+    for i in 3: Rectangle {
+        property <float> bar: root.playing ? root.heights[Math.mod(Beat.step * (i + 2) + i * 3, root.heights.length)] : [0.3, 1, 0.6][i];
+        x: i * 3px;
+        y: parent.height * (1 - self.bar);
+        width: 2px;
+        height: parent.height * self.bar;
+        background: Theme.accent;
+    }
+}

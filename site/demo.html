@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>spotini demo</title>
+    <meta name="description" content="The real spotini interface running in your browser with made-up music. No sound, no Spotify account needed." />
+    <link rel="icon" href="brand/favicon/favicon.svg" type="image/svg+xml" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #161616; }
+      canvas { display: block; outline: none; }
+    </style>
+  </head>
+  <body>
+    <!-- The app's own screens, built to WebAssembly from demo/ (see demo/build.sh). -->
+    <canvas id="canvas"></canvas>
+    <script type="module">
+      // Slint's web backend sizes its first frame wrongly on screens that scale (pixel ratio
+      // other than 1) and stops; drawing at one pixel per CSS pixel avoids it.
+      Object.defineProperty(window, "devicePixelRatio", { get: () => 1 });
+      // Built into site/public/demo/, which Vite serves as is, so it isn't bundled.
+      const { default: init, set_theme, fit } = await import(/* @vite-ignore */ new URL("demo/spotini_demo.js", location.href).href);
+
+      // The website's theme buttons send {type: "spotini-theme", palette, paneStyle};
+      // one may come in before the demo has loaded.
+      let pending = null;
+      let ready = false;
+      window.addEventListener("message", (e) => {
+        if (e.origin !== location.origin || e.data?.type !== "spotini-theme") return;
+        if (ready) set_theme(e.data.palette, e.data.paneStyle);
+        else pending = e.data;
+      });
+
+      try {
+        await init();
+      } catch (e) {
+        // The window's event loop takes over by throwing this; anything else is a real error.
+        if (!String(e).includes("exceptions for control flow")) throw e;
+      }
+      ready = true;
+      // The window fills the page.
+      const resize = () => fit(innerWidth, innerHeight);
+      resize();
+      addEventListener("resize", resize);
+      const canvas = document.getElementById("canvas");
+      if (pending) set_theme(pending.palette, pending.paneStyle);
+      canvas.focus();
+    </script>
+  </body>
+</html>

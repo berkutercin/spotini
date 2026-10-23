@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en" data-palette="amber">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>spotini — a tiny, keyboard-first player for Spotify</title>
+  <meta name="description" content="spotini is a lightweight, terminal-style Spotify player for Windows: under 20 MB of memory, keyboard-first, with synced lyrics and themes. Unofficial; needs Spotify Premium." />
+  <link rel="icon" href="brand/favicon/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="brand/favicon/favicon-180.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="spotini — a tiny, keyboard-first player for Spotify" />
+  <meta property="og:description" content="Lightweight, terminal-style Spotify player for Windows. Under 20 MB of memory. Unofficial; needs Spotify Premium." />
+  <meta property="og:image" content="https://berkutercin.github.io/spotini/brand/social/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <script type="module" src="./main.js"></script>
+</head>
+<body>
+  <nav class="nav wrap">
+    <a href="./" class="nav-logo" aria-label="spotini home"><img src="brand/logo/lockup-dark.svg" alt="spotini" /></a>
+    <div class="nav-links">
+      <a href="#demo">demo</a>
+      <a href="#features">features</a>
+      <a href="#setup">setup</a>
+      <a href="#faq">faq</a>
+      <a href="https://github.com/berkutercin/spotini">github</a>
+    </div>
+    <div class="themes" role="group" aria-label="Theme">
+      <button data-theme="amber" title="Amber" aria-pressed="true"></button>
+      <button data-theme="catppuccin" title="Catppuccin"></button>
+      <button data-theme="tokyo" title="Tokyo Night"></button>
+      <button data-theme="nord" title="Nord"></button>
+      <button data-theme="gruvbox" title="Gruvbox"></button>
+    </div>
+  </nav>
+
+  <header class="hero wrap">
+    <p class="prompt"><span class="accent">❯</span> spotini --help</p>
+    <h1>A tiny, keyboard-first<br />player for Spotify.</h1>
+    <p class="lede">Your Spotify library in a fast, terminal-style window. Under <b>20&nbsp;MB</b> of memory, window open or
+      not, synced lyrics, a real queue, and every action on a key.</p>
+    <div class="cta">
+      <a class="button primary" href="https://github.com/berkutercin/spotini/releases/latest/download/spotini-setup.exe">
+        ↓ download for windows
+      </a>
+      <a class="button" href="https://github.com/berkutercin/spotini/releases/latest/download/spotini-portable.exe">portable .exe</a>
+      <a class="button ghost" href="https://github.com/berkutercin/spotini">source on github</a>
+    </div>
+    <p class="meta">windows 10 / 11 · free · MIT · needs Spotify Premium · unofficial</p>
+  </header>
+
+  <section id="demo" class="wrap demo-section">
+    <div class="section-head">
+      <h2>// try it</h2>
+      <p>This is the real app, running in your browser with made-up music. No sound, no account. Click inside, then use the
+        keyboard.</p>
+    </div>
+    <div class="window">
+      <div class="titlebar">
+        <img src="brand/logo/png/icon-32.png" width="16" height="16" alt="" />
+        <span>spotini — demo</span>
+        <span class="controls" aria-hidden="true"><i>─</i><i>□</i><i>✕</i></span>
+      </div>
+      <div class="viewport" id="demo-viewport">
+        <iframe id="demo-frame" src="demo.html" title="spotini live demo" loading="lazy"></iframe>
+      </div>
+    </div>
+    <div class="keys">
+      <span><kbd>j</kbd><kbd>k</kbd> move</span>
+      <span><kbd>enter</kbd> play</span>
+      <span><kbd>space</kbd> pause</span>
+      <span><kbd>/</kbd> search</span>
+      <span><kbd>l</kbd> lyrics</span>
+      <span><kbd>q</kbd> queue</span>
+      <span><kbd>R</kbd> radio</span>
+      <span><kbd>e</kbd> play next</span>
+      <span><kbd>right-click</kbd> menu</span>
+      <span><kbd>o</kbd> go to playing</span>
+      <span><kbd>,</kbd> settings</span>
+      <span><kbd>?</kbd> all keys</span>
+      <a class="fullscreen" href="demo.html" target="_blank" rel="noopener">open full screen ↗</a>
+    </div>
+  </section>
+
+  <section id="features" class="wrap">
+    <div class="section-head">
+      <h2>// what it does</h2>
+      <p>The parts of Spotify you use every day, without the parts you don't.</p>
+    </div>
+    <div class="features">
+      <article>
+        <h3><span class="accent">▍</span>light</h3>
+        <p>One small native program, written in Rust, with no browser inside: under 20 MB while it plays, window open or closed.</p>
+      </article>
+      <article>
+        <h3><span class="accent">j/k</span> keyboard first</h3>
+        <p>Move, play, search, skip, seek, like, switch panes. Every action has a key, vim-style, and the mouse still works.</p>
+      </article>
+      <article>
+        <h3><span class="accent">♪</span> synced lyrics</h3>
+        <p>Lyrics follow the song line by line, from LRCLIB. Click a line to jump there.</p>
+      </article>
+      <article>
+        <h3><span class="accent">≡</span> a real queue</h3>
+        <p>See what plays next, in shuffle order, and jump to any upcoming track. Put songs up next or take them out.
+          Shuffle and repeat (all / one) included.</p>
+      </article>
+      <article>
+        <h3><span class="accent">/</span> search &amp; library</h3>
+        <p>Liked Songs, all your playlists (followed ones and Spotify's mixes too), and search across tracks, albums and
+          artists. Make playlists and add or remove songs, several at once, from a right-click menu. Songs already there
+          aren't added twice.</p>
+      </article>
+      <article>
+        <h3><span class="accent">◎</span> song radio</h3>
+        <p>Press <kbd>R</kbd> on any song for an endless station of songs like it. The player always shows what it's playing from.</p>
+      </article>
+      <article>
+        <h3><span class="accent">◐</span> your look</h3>
+        <p>Eleven palettes or one of your own, three pane styles (minimal, boxed, glass), any accent colour, or colours
+          from the playing cover.</p>
+      </article>
+      <article>
+        <h3><span class="accent">⏯</span> fits in windows</h3>
+        <p>Media keys, the Windows media overlay with cover art, and a tray menu. Turn on the mini player there for
+          previous, play/pause, next and volume right in your taskbar.</p>
+      </article>
+      <article>
+        <h3><span class="accent">⇄</span> a real device</h3>
+        <p>spotini shows up in your Spotify account like any other speaker, so what you play shows wherever Spotify shares
+          it, such as your Discord status.</p>
+      </article>
+      <article>
+        <h3><span class="accent">320</span> kbps</h3>
+        <p>Streams at Spotify's highest Premium quality (Ogg Vorbis, 320 kbps) through librespot.</p>
+      </article>
+      <article>
+        <h3><span class="accent">◇</span> private</h3>
+        <p>Talks only to Spotify and, for lyrics, LRCLIB. No account of ours, no analytics; your login stays in Windows
+          Credential Manager.</p>
+      </article>
+      <article>
+        <h3><span class="accent">{}</span> free &amp; open</h3>
+        <p>MIT licensed, no ads, no upsell. Every download is built from the public source by GitHub Actions.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="light" class="wrap">
+    <div class="section-head">
+      <h2>// why it's light</h2>
+      <p>No browser engine at all, bundled or borrowed. Measured on a 4-core Windows 10 laptop while playing music.</p>
+    </div>
+    <div class="stats">
+      <div><b>17 MB</b><span>in Task Manager, window open, music playing</span></div>
+      <div><b>1</b><span>process: no helper or browser processes</span></div>
+      <div><b>7 MB</b><span>installer download</span></div>
+    </div>
+    <ul class="how">
+      <li><span class="accent">❯</span> playback, the queue and media keys run on librespot, in Rust</li>
+      <li><span class="accent">❯</span> the interface is drawn by Slint's software renderer, straight into the window</li>
+      <li><span class="accent">❯</span> closing the window keeps the music going from the tray</li>
+    </ul>
+  </section>
+
+  <section id="setup" class="wrap">
+    <div class="section-head">
+      <h2>// setup</h2>
+      <p>About five minutes, once. Spotify requires every app like this to use your own (free) developer app.</p>
+    </div>
+    <ol class="steps">
+      <li>
+        <h3>download &amp; run</h3>
+        <p>Get <a href="https://github.com/berkutercin/spotini/releases/latest/download/spotini-setup.exe">spotini-setup.exe</a>.
+          It isn't code-signed, so Windows may say <i>"Windows protected your PC"</i>: choose <b>More info → Run anyway</b>.</p>
+      </li>
+      <li>
+        <h3>create a spotify app</h3>
+        <p>At <a href="https://developer.spotify.com/dashboard">developer.spotify.com/dashboard</a>, create an app with
+          redirect URI <code>http://127.0.0.1:8899/callback</code> and <b>Web API</b> ticked. Copy its Client ID.</p>
+      </li>
+      <li>
+        <h3>log in &amp; paste</h3>
+        <p>Log in with Spotify in spotini, paste the Client ID, and connect your library. It remembers both.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="faq" class="wrap">
+    <div class="section-head">
+      <h2>// faq</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Do I need Spotify Premium?</summary>
+        <p>Yes. Spotify only allows playback in third-party apps for Premium accounts.</p>
+      </details>
+      <details>
+        <summary>Is this official?</summary>
+        <p>No. spotini is an independent open-source project, not made, endorsed or supported by Spotify. Playback uses
+          <a href="https://github.com/librespot-org/librespot">librespot</a>, an open-source Spotify client library.</p>
+      </details>
+      <details>
+        <summary>Why do I need my own Client ID?</summary>
+        <p>Since February 2026 Spotify limits each developer app to five users, so a shared ID can't work for everyone. Your own
+          app is free and takes two minutes.</p>
+      </details>
+      <details>
+        <summary>Do followed playlists and Spotify's mixes work?</summary>
+        <p>Yes. Spotify's Web API only lists the tracks of playlists you own, so spotini loads followed playlists, Daily
+          Mixes and song radio through Spotify's internal endpoints, the same way it plays music. Like playback, that's
+          unofficial and could break if Spotify changes it.</p>
+      </details>
+      <details>
+        <summary>Where are my login details stored?</summary>
+        <p>In Windows Credential Manager on your PC. spotini talks only to Spotify and, for lyrics, to LRCLIB. There's no
+          analytics, and this website has no tracking either.</p>
+      </details>
+      <details>
+        <summary>Is there lossless audio?</summary>
+        <p>No. librespot streams up to 320 kbps Ogg Vorbis, Spotify's highest quality before lossless.</p>
+      </details>
+      <details>
+        <summary>macOS or Linux?</summary>
+        <p>Windows only for now. spotini is built with Rust and Slint, which run elsewhere too, so other platforms are possible later.</p>
+      </details>
+    </div>
+  </section>
+
+  <footer class="wrap footer">
+    <img src="brand/logo/lockup-mono-dark.svg" alt="spotini" />
+    <p>MIT licensed · <a href="https://github.com/berkutercin/spotini">github</a> ·
+      <a href="https://github.com/berkutercin/spotini/releases">releases</a> · <a href="brand/">brand</a></p>
+    <p class="fine">spotini is not affiliated with, endorsed by or sponsored by Spotify. Spotify is a trademark of Spotify AB.
+      Lyrics from LRCLIB. Song names and covers in the demo are made up.</p>
+  </footer>
+</body>
+</html>

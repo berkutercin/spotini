@@ -1,0 +1,70 @@
+[package]
+name = "spotini"
+version = "1.0.0"
+description = "A lightweight Spotify player"
+authors = ["spotini contributors"]
+license = "MIT"
+edition = "2024"
+
+[dependencies]
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "accessibility",
+    "backend-winit",
+    "renderer-software",
+    "unstable-winit-030",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+librespot-core = "0.8"
+librespot-playback = "0.8"
+librespot-oauth = "0.8"
+librespot-metadata = "0.8"
+librespot-protocol = "0.8"
+librespot-connect = "0.8"
+protobuf = "3"
+tokio = { version = "1.54.0", features = ["full"] }
+keyring = { version = "3", features = ["windows-native"] }
+log = "0.4.34"
+env_logger = "0.11.11"
+reqwest = { version = "0.12", features = ["json"] }
+souvlaki = "0.8"
+rand = "0.9"
+# cpal's default Windows priority boost passes a thread ID where a handle is
+# expected, so it silently fails; this feature uses MMCSS "Pro Audio" instead.
+cpal = { version = "0.16", features = ["audio_thread_priority"] }
+tray-icon = "0.25"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+slint-build = "1.18"
+tauri-winres = "0.3"
+
+# Unoptimized audio decoding can't keep up in real time, which crackles during
+# development. Optimize dependencies even in dev builds.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

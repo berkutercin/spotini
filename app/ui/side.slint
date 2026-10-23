@@ -1,0 +1,297 @@
+// The right-hand panel: synced lyrics or the play queue, switched with tabs.
+
+import { Theme, Label, TextButton, Pane, PaneTitle, TitleText, PlayingMark } from "widgets.slint";
+
+export enum SideTab { lyrics, queue }
+
+export struct LyricLine {
+    text: string,
+    /// An empty line between verses.
+    gap: bool,
+}
+
+export struct QueueTrack {
+    title: string,
+    artist: string,
+    time: string,
+}
+
+component TabButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback clicked;
+    width: label.preferred-width;
+    height: label.preferred-height;
+    label := TitleText {
+        words: root.text;
+        color: root.active || area.has-hover ? Theme.accent : Theme.dim;
+    }
+    area := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component Heading inherits Label {
+    height: Theme.line + 14px;
+    vertical-alignment: bottom;
+    color: Theme.dim;
+}
+
+/// A queue entry: number, title over artist, time.
+component QueueLine inherits Rectangle {
+    in property <string> num;
+    in property <QueueTrack> track;
+    /// The track now playing: accent colours and the bars for a number.
+    in property <bool> playing;
+    /// Whether the music is on, for the bars.
+    in property <bool> music-on;
+    /// The remove button takes the time's place.
+    in property <bool> hide-time;
+    property <length> gap: 10px;
+    height: Theme.line + Theme.line * 0.9 + 6px;
+    if !root.playing: Label {
+        x: 8px;
+        width: 3 * Theme.ch;
+        text: root.num;
+        color: Theme.dim;
+        horizontal-alignment: right;
+    }
+    if root.playing: PlayingMark {
+        x: 8px + 3 * Theme.ch - self.width;
+        playing: root.music-on;
+    }
+    VerticalLayout {
+        x: 8px + 3 * Theme.ch + root.gap;
+        width: root.width - 16px - 8 * Theme.ch - 2 * root.gap;
+        alignment: center;
+        Label {
+            text: root.track.title;
+            color: root.playing ? Theme.accent : Theme.fg;
+        }
+        Label {
+            text: root.track.artist;
+            color: Theme.muted;
+            font-size: Theme.font-size * 0.9;
+        }
+    }
+    if !root.hide-time: Label {
+        x: root.width - 8px - 5 * Theme.ch;
+        width: 5 * Theme.ch;
+        text: root.track.time;
+        color: Theme.dim;
+        horizontal-alignment: right;
+    }
+}
+
+export component SidePane inherits Pane {
+    in-out property <SideTab> tab;
+    // Lyrics.
+    in property <[LyricLine]> lines;
+    /// Time-synced lines can be clicked to seek; plain ones can't.
+    in property <bool> synced;
+    /// The line being sung, or -1.
+    in property <int> current-line: -1;
+    /// Shown instead of lines: "looking for lyrics…", "no lyrics found" and the like.
+    in property <string> lyrics-message;
+    in property <bool> lyrics-error;
+    /// Changes with each new set of lyrics, which then show from the top.
+    in property <string> lyrics-key;
+    // Queue.
+    in property <bool> has-current;
+    in property <QueueTrack> now;
+    in property <[QueueTrack]> upcoming;
+    in property <bool> is-playing;
+    in-out property <int> queue-cursor: -1;
+    callback tab-changed(SideTab);
+    callback take-focus();
+    callback seek-line(int);
+    /// Plays `upcoming[i]`.
+    callback jump(int);
+    /// Takes `upcoming[i]` out of the queue.
+    callback remove(int);
+    /// A right-click on `upcoming[i]`, at a point in the window.
+    callback queue-menu(int, length, length);
+
+    TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && root.tab == SideTab.queue) {
+                root.take-focus();
+            }
+        }
+    }
+    VerticalLayout {
+        padding-top: Theme.pane-pad;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-bottom: 8px;
+        PaneTitle {
+            focused: root.focused && root.tab == SideTab.queue;
+            TabButton {
+                text: "Lyrics";
+                active: root.tab == SideTab.lyrics;
+                clicked => { root.tab-changed(SideTab.lyrics); }
+            }
+            Label { horizontal-stretch: 0; text: " | "; color: Theme.dim; font-size: Theme.font-size * 0.85; }
+            TabButton {
+                text: "Queue";
+                active: root.tab == SideTab.queue;
+                clicked => { root.tab-changed(SideTab.queue); }
+            }
+            Label {
+                text: root.tab == SideTab.queue ? " · " + root.upcoming.length + " next" : root.lines.length == 0 ? "" : root.synced ? " · synced" : " · not synced";
+                color: Theme.dim;
+                font-size: Theme.font-size * 0.85;
+            }
+        }
+
+        if root.tab == SideTab.lyrics: lyrics := Flickable {
+            vertical-stretch: 1;
+            animate content-y { duration: 300ms; easing: ease-out; }
+            property <string> key: root.lyrics-key;
+            changed key => { self.content-y = 0; }
+            VerticalLayout {
+                if root.lyrics-message != "": Label {
+                    x: 8px;
+                    height: Theme.line;
+                    text: root.lyrics-message;
+                    color: root.lyrics-error ? Theme.error : Theme.dim;
+                }
+                for line[i] in root.lines: Rectangle {
+                    property <bool> now: i == root.current-line;
+                    // Keep the sung line near the middle of the pane.
+                    changed now => {
+                        if (self.now) {
+                            lyrics.content-y = min(0px, lyrics.height / 2 - self.y - self.height / 2);
+                        }
+                    }
+                    height: !root.synced && line.gap ? Theme.line * 0.8 : text.preferred-height + 6px;
+                    text := Text {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                        font-size: Theme.font-size;
+                        font-weight: now ? 700 : 400;
+                        text: root.synced && line.gap ? "♪" : line.text;
+                        color: !root.synced ? Theme.muted
+                            : line.gap ? Theme.border
+                            : now ? Theme.accent
+                            : i < root.current-line || line-area.has-hover ? Theme.muted
+                            : Theme.dim;
+                    }
+                    line-area := TouchArea {
+                        enabled: root.synced;
+                        mouse-cursor: self.enabled ? pointer : default;
+                        clicked => { root.seek-line(i); }
+                    }
+                }
+                Label {
+                    x: 8px;
+                    height: Theme.line + 16px;
+                    vertical-alignment: bottom;
+                    text: "lyrics · lrclib.net";
+                    color: Theme.dim;
+                    font-size: Theme.font-size * 0.85;
+                }
+                // Room under the last line so it can reach the middle too.
+                Rectangle { height: 200px; }
+            }
+        }
+
+        if root.tab == SideTab.queue: queue := Flickable {
+            vertical-stretch: 1;
+            // A new track starts a new "next up" list; show it from the top.
+            property <string> playing: root.now.title + root.now.artist;
+            changed playing => { self.content-y = 0; }
+            // Keep the cursor's row in view, below "now playing" and the headings.
+            property <int> cursor: root.queue-cursor;
+            property <length> row-height: Theme.line * 1.9 + 6px;
+            changed cursor => {
+                if (self.cursor < 0) {
+                    return;
+                }
+                let top = 2 * (Theme.line + 14px) + self.row-height + self.cursor * self.row-height;
+                if (top < -self.content-y) {
+                    self.content-y = -top;
+                } else if (top + self.row-height > -self.content-y + self.height) {
+                    self.content-y = self.height - top - self.row-height;
+                }
+            }
+            VerticalLayout {
+                if !root.has-current: Label {
+                    x: 8px;
+                    height: Theme.line;
+                    text: "nothing queued — play something from a list";
+                    color: Theme.dim;
+                }
+                if root.has-current: Heading { x: 8px; text: "now playing"; }
+                if root.has-current: QueueLine {
+                    track: root.now;
+                    playing: true;
+                    music-on: root.is-playing;
+                }
+                if root.has-current: Heading { x: 8px; text: "next up"; }
+                if root.has-current && root.upcoming.length == 0: Label {
+                    x: 8px;
+                    height: Theme.line;
+                    text: "end of the list";
+                    color: Theme.dim;
+                }
+                for track[i] in root.upcoming: row := Rectangle {
+                    height: line.height;
+                    property <bool> under-cursor: i == root.queue-cursor;
+                    background: self.under-cursor ? (root.focused ? Theme.select : Theme.hover) : row-area.has-hover || remove-area.has-hover ? Theme.hover : transparent;
+                    if row.under-cursor && root.focused: Rectangle {
+                        x: 0;
+                        width: 2px;
+                        background: Theme.accent;
+                    }
+                    line := QueueLine {
+                        num: i + 1;
+                        track: track;
+                        hide-time: row-area.has-hover || remove-area.has-hover;
+                    }
+                    row-area := TouchArea {
+                        pointer-event(event) => {
+                            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                                root.take-focus();
+                                root.queue-cursor = i;
+                                root.queue-menu(i, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                            }
+                        }
+                        clicked => {
+                            root.take-focus();
+                            root.queue-cursor = i;
+                        }
+                        double-clicked => { root.jump(i); }
+                    }
+                    // While the row is hovered, in the time's place: take it out of the queue.
+                    remove-area := TouchArea {
+                        x: parent.width - 8px - self.width;
+                        y: (parent.height - self.height) / 2;
+                        width: 22px;
+                        height: 22px;
+                        enabled: row-area.has-hover || self.has-hover;
+                        mouse-cursor: self.enabled ? pointer : default;
+                        clicked => { root.remove(i); }
+                        if remove-area.enabled: Rectangle {
+                            border-radius: 4px;
+                            background: remove-area.has-hover ? Theme.error.with-alpha(0.15) : transparent;
+                            Path {
+                                width: 8px;
+                                height: 8px;
+                                viewbox-width: 8;
+                                viewbox-height: 8;
+                                stroke: remove-area.has-hover ? Theme.error : Theme.muted;
+                                stroke-width: 1.2px;
+                                stroke-line-cap: round;
+                                commands: "M1 1l6 6M7 1l-6 6";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

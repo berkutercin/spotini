@@ -1,0 +1,54 @@
+# Builds spotini on Windows when a version tag (v*) is pushed and publishes a
+# GitHub Release with an installer and a portable exe.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+
+      - name: Build the exe
+        working-directory: app
+        run: cargo build --release --locked
+
+      - name: Install NSIS
+        # The Windows runners no longer come with it.
+        run: choco install nsis --no-progress -y
+
+      - name: Build the installer
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: '"/c/Program Files (x86)/NSIS/makensis.exe" -DVERSION="${TAG#v}" app/installer.nsi'
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          mkdir dist-release
+          cp app/target/release/spotini-setup.exe "dist-release/spotini_${version}_x64-setup.exe"
+          cp app/target/release/spotini.exe "dist-release/spotini_${version}_x64-portable.exe"
+          # Stable names so .../releases/latest/download/spotini-setup.exe always gets the newest version.
+          cp "dist-release/spotini_${version}_x64-setup.exe" dist-release/spotini-setup.exe
+          cp "dist-release/spotini_${version}_x64-portable.exe" dist-release/spotini-portable.exe
+          (cd dist-release && sha256sum *.exe > SHA256SUMS.txt)
+          gh release create "$TAG" dist-release/* \
+            --title "spotini $TAG" \
+            --notes-file .github/release-notes.md

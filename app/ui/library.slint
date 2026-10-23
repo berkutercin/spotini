@@ -1,0 +1,666 @@
+// The library screen's panes: the list of playlists, the track table and the player.
+
+import { ListView } from "std-widgets.slint";
+import { Theme, Label, TextButton, IconButton, Icon, Bar, Pane, PlayingMark, PaneTitle, PaneStyle } from "widgets.slint";
+
+export struct SourceRow {
+    name: string,
+    count: string,
+    playing: bool,
+}
+
+export enum RowKind { track, album, artist, more, heading }
+
+export struct TrackRow {
+    kind: RowKind,
+    num: string,
+    title: string,
+    artist: string,
+    album: string,
+    time: string,
+    playable: bool,
+    /// The artist and album cells open those pages.
+    artist-link: bool,
+    album-link: bool,
+    /// Part of a multi-row selection.
+    selected: bool,
+}
+
+export component LibraryPane inherits Pane {
+    in property <[SourceRow]> sources;
+    in property <bool> is-playing;
+    in property <bool> loading;
+    /// The list being viewed, or -1.
+    in property <int> open-index: -1;
+    /// The keyboard cursor, shown while the pane has focus.
+    in-out property <int> cursor;
+    callback open(int);
+    callback take-focus();
+    callback new-playlist();
+    callback settings();
+    callback help();
+    callback search(string);
+    /// Esc in the search box: hand the keys back.
+    callback leave-search();
+
+    property <length> row-height: Theme.line + 4px;
+    property <length> heading-height: Theme.line + 14px;
+
+    public function focus-search() {
+        query.focus();
+    }
+
+    // Keep the cursor's row in view; "playlists" sits above row 1.
+    changed cursor => {
+        let top = root.cursor * root.row-height + (root.cursor >= 1 ? root.heading-height : 0px);
+        if (top < -list.content-y) {
+            list.content-y = -top;
+        } else if (top + root.row-height > -list.content-y + list.visible-height) {
+            list.content-y = list.visible-height - top - root.row-height;
+        }
+    }
+
+    TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.take-focus();
+            }
+        }
+    }
+    VerticalLayout {
+        padding-top: Theme.pane-pad;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-bottom: 8px;
+        PaneTitle { text: "Library"; focused: root.focused; }
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 6px;
+            height: Theme.line + 8px;
+            Label { horizontal-stretch: 0; text: "/"; color: Theme.accent; }
+            Rectangle {
+                horizontal-stretch: 1;
+                // Esc leaves the box.
+                FocusScope {
+                    key-pressed(event) => {
+                        if (event.text == Key.Escape) {
+                            root.leave-search();
+                        }
+                        // Keys typed here are text, not shortcuts.
+                        return accept;
+                    }
+                    query := TextInput {
+                        color: Theme.fg;
+                        font-size: Theme.font-size;
+                        vertical-alignment: center;
+                        single-line: true;
+                        selection-background-color: Theme.accent.with-alpha(0.35);
+                        accepted => {
+                            root.search(self.text);
+                        }
+                    }
+                }
+                if query.text == "": Label { text: "search…"; color: Theme.dim; }
+            }
+        }
+        Rectangle { height: 1px; background: query.has-focus ? Theme.accent : Theme.border; }
+        Rectangle { height: 8px; }
+        list := ListView {
+            vertical-stretch: 1;
+            for source[i] in root.sources: VerticalLayout {
+                if i == 1: HorizontalLayout {
+                    height: root.heading-height;
+                    padding-top: root.heading-height - Theme.line;
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    Label {
+                        text: "playlists";
+                        color: Theme.dim;
+                    }
+                    TextButton {
+                        text: "+ new";
+                        ink: Theme.dim;
+                        clicked => { root.new-playlist(); }
+                    }
+                }
+                Rectangle {
+                    height: root.row-height;
+                    background: i == root.cursor && root.focused ? Theme.select : i == root.open-index || area.has-hover ? Theme.hover : transparent;
+                    if i == root.open-index: Rectangle {
+                        x: 0;
+                        width: 2px;
+                        background: Theme.dim;
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 8px;
+                        Rectangle {
+                            width: 1.4 * Theme.ch;
+                            if source.playing: PlayingMark { x: 0; playing: root.is-playing; }
+                        }
+                        Label {
+                            horizontal-stretch: 1;
+                            text: (i == 0 ? "♥ " : "") + source.name;
+                            color: source.playing ? Theme.accent : Theme.fg;
+                        }
+                        Label {
+                            horizontal-stretch: 0;
+                            text: source.count;
+                            color: Theme.dim;
+                        }
+                    }
+                    area := TouchArea {
+                        clicked => {
+                            root.take-focus();
+                            root.cursor = i;
+                            root.open(i);
+                        }
+                    }
+                }
+            }
+        }
+        if root.loading: Label { x: 8px; text: "loading playlists…"; color: Theme.dim; }
+        Rectangle { height: 1px; background: Theme.border; }
+        HorizontalLayout {
+            padding-top: 8px;
+            padding-left: 8px;
+            padding-right: 8px;
+            alignment: space-between;
+            TextButton { text: "⚙ settings"; ink: Theme.dim; clicked => { root.settings(); } }
+            TextButton { text: "? help"; ink: Theme.dim; clicked => { root.help(); } }
+        }
+    }
+}
+
+/// One line of the track table: number, title, artist, album and time.
+component TrackLine inherits Rectangle {
+    in property <string> num;
+    /// The playing track's row shows the bars instead of its number.
+    in property <bool> current;
+    in property <bool> playing;
+    in property <string> title;
+    in property <string> artist;
+    in property <string> album;
+    in property <string> time;
+    in property <color> num-color: Theme.dim;
+    in property <color> title-color: Theme.fg;
+    in property <color> other-color: Theme.muted;
+    in property <bool> artist-link;
+    in property <bool> album-link;
+    callback open-artist();
+    callback open-album();
+    property <length> gap: 14px;
+    // The web version's grid: 4ch, 2.2fr, 1.4fr, 1.4fr, 5ch.
+    property <length> fill: max(0px, root.width - 16px - 9 * Theme.ch - 4 * root.gap);
+    property <length> title-width: root.fill * 2.2 / 5;
+    property <length> other-width: root.fill * 1.4 / 5;
+    if !root.current: Label {
+        x: 8px;
+        width: 4 * Theme.ch;
+        height: parent.height;
+        text: root.num;
+        color: root.num-color;
+        horizontal-alignment: right;
+    }
+    if root.current: PlayingMark {
+        x: 8px + 4 * Theme.ch - self.width;
+        playing: root.playing;
+    }
+    Label {
+        x: 8px + 4 * Theme.ch + root.gap;
+        width: root.title-width;
+        height: parent.height;
+        text: root.title;
+        color: root.title-color;
+    }
+    Label {
+        x: 8px + 4 * Theme.ch + 2 * root.gap + root.title-width;
+        width: root.other-width;
+        height: parent.height;
+        text: root.artist;
+        color: artist-area.has-hover ? Theme.accent : root.other-color;
+        artist-area := TouchArea {
+            x: 0;
+            width: min(parent.width, parent.preferred-width);
+            enabled: root.artist-link;
+            mouse-cursor: self.enabled ? pointer : default;
+            clicked => { root.open-artist(); }
+        }
+    }
+    Label {
+        x: 8px + 4 * Theme.ch + 3 * root.gap + root.title-width + root.other-width;
+        width: root.other-width;
+        height: parent.height;
+        text: root.album;
+        color: album-area.has-hover ? Theme.accent : root.other-color;
+        album-area := TouchArea {
+            x: 0;
+            width: min(parent.width, parent.preferred-width);
+            enabled: root.album-link;
+            mouse-cursor: self.enabled ? pointer : default;
+            clicked => { root.open-album(); }
+        }
+    }
+    Label {
+        x: root.width - 8px - 5 * Theme.ch;
+        width: 5 * Theme.ch;
+        height: parent.height;
+        text: root.time;
+        color: root.num-color;
+        horizontal-alignment: right;
+    }
+}
+
+export component TrackTable inherits Pane {
+    in property <string> title;
+    in property <string> detail;
+    in property <[TrackRow]> tracks;
+    in property <bool> loading;
+    in property <string> error;
+    /// The playing track's row, if it was started from this list; else -1.
+    in property <int> current-index: -1;
+    in property <bool> is-playing;
+    in-out property <int> cursor: -1;
+    /// What to say when the list is empty.
+    in property <string> empty-text;
+    in property <bool> can-go-back;
+    /// Rows in the multi-row selection; one or none shows as the cursor alone.
+    in property <int> selection-count;
+    callback take-focus();
+    /// A click on a row, with ctrl and shift.
+    callback select(int, bool, bool);
+    /// A right-click on a row, at a point in the window.
+    callback row-menu(int, length, length);
+    /// Double-click: plays a track, opens an album or artist.
+    callback activate(int);
+    callback open-artist(int);
+    callback open-album(int);
+    callback back();
+
+    property <length> row-height: Theme.line + 4px;
+
+    changed cursor => {
+        if (root.cursor < 0) {
+            return;
+        }
+        let top = root.cursor * root.row-height;
+        if (top < -list.content-y) {
+            list.content-y = -top;
+        } else if (top + root.row-height > -list.content-y + list.visible-height) {
+            list.content-y = list.visible-height - top - root.row-height;
+        }
+    }
+
+    /// Scrolls row `i` into the middle of the list.
+    public function reveal(i: int) {
+        list.content-y = min(0px, max(list.visible-height - list.content-height, list.visible-height / 2 - (i + 0.5) * root.row-height));
+    }
+
+    TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.take-focus();
+            }
+        }
+    }
+    VerticalLayout {
+        padding-top: Theme.pane-pad;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-bottom: 8px;
+        PaneTitle {
+            text: root.title;
+            detail: root.detail + (root.selection-count > 1 ? " · " + root.selection-count + " selected" : "");
+            focused: root.focused;
+        }
+        TrackLine {
+            height: Theme.line + 6px;
+            num: "#";
+            title: "title";
+            artist: "artist";
+            album: "album";
+            time: "time";
+            title-color: Theme.dim;
+            other-color: Theme.dim;
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        Rectangle { height: 4px; }
+        Rectangle {
+            vertical-stretch: 1;
+            list := ListView {
+                for track[i] in root.tracks: row := Rectangle {
+                    height: root.row-height;
+                    property <bool> current: i == root.current-index;
+                    property <bool> heading: track.kind == RowKind.heading;
+                    property <bool> under-cursor: i == root.cursor && !self.heading;
+                    property <bool> marked: self.under-cursor || (track.selected && root.selection-count > 1);
+                    background: self.marked ? (root.focused ? Theme.select : Theme.hover) : row-area.has-hover && !self.heading ? Theme.hover : transparent;
+                    opacity: track.playable ? 1 : 0.35;
+                    if row.under-cursor && root.focused: Rectangle {
+                        x: 0;
+                        width: 2px;
+                        background: Theme.accent;
+                    }
+                    row-area := TouchArea {
+                        pointer-event(event) => {
+                            if (event.kind != PointerEventKind.down || row.heading || track.kind == RowKind.more) {
+                                return;
+                            }
+                            if (event.button == PointerEventButton.left) {
+                                root.select(i, event.modifiers.control, event.modifiers.shift);
+                            } else if (event.button == PointerEventButton.right && track.kind == RowKind.track) {
+                                root.take-focus();
+                                root.row-menu(i, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                            }
+                        }
+                        clicked => {
+                            root.take-focus();
+                            if (track.kind == RowKind.more) {
+                                root.activate(i);
+                            } else if (!row.heading) {
+                                root.cursor = i;
+                            }
+                        }
+                        double-clicked => {
+                            if (track.playable && !row.heading && track.kind != RowKind.more) {
+                                root.activate(i);
+                            }
+                        }
+                    }
+                    if row.heading: Label {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        vertical-alignment: bottom;
+                        text: track.title;
+                        color: Theme.dim;
+                    }
+                    if !row.heading: TrackLine {
+                        num: track.num;
+                        current: row.current;
+                        playing: root.is-playing;
+                        title: track.title;
+                        artist: track.artist;
+                        album: track.album;
+                        time: track.time;
+                        artist-link: track.artist-link;
+                        album-link: track.album-link;
+                        num-color: row.current || track.kind != RowKind.track ? Theme.accent : Theme.dim;
+                        title-color: row.current ? Theme.accent : track.kind == RowKind.more ? Theme.muted : Theme.fg;
+                        open-artist => {
+                            root.take-focus();
+                            root.cursor = i;
+                            root.open-artist(i);
+                        }
+                        open-album => {
+                            root.take-focus();
+                            root.cursor = i;
+                            root.open-album(i);
+                        }
+                    }
+                }
+            }
+            if root.error != "": Label {
+                x: 8px;
+                y: 0;
+                height: Theme.line;
+                width: parent.width - 16px;
+                text: root.error;
+                color: Theme.error;
+            }
+            if root.error == "" && root.loading: Label {
+                x: 8px;
+                y: 0;
+                height: Theme.line;
+                text: "loading…";
+                color: Theme.dim;
+            }
+            if root.error == "" && !root.loading && root.tracks.length == 0: Label {
+                x: 8px;
+                y: 0;
+                height: Theme.line;
+                text: root.empty-text;
+                color: Theme.dim;
+            }
+        }
+        if root.can-go-back: HorizontalLayout {
+            padding-top: 4px;
+            padding-right: 8px;
+            alignment: end;
+            TextButton { text: "esc · back"; ink: Theme.dim; clicked => { root.back(); } }
+        }
+    }
+}
+
+/// A speaker with as many waves as the level; crossed out when muted.
+component VolumeIcon inherits Rectangle {
+    in property <float> level;
+    width: 14px;
+    height: 14px;
+    in property <color> ink;
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        fill: root.ink;
+        commands: "M2 6h3l4-3v10l-4-3H2z";
+    }
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        stroke: root.ink;
+        stroke-width: 1.4px * 14 / 16;
+        stroke-line-cap: round;
+        commands: root.level == 0 ? "M11 6l4 4M15 6l-4 4" : root.level > 0.5 ? "M11 5.5a3.5 3.5 0 0 1 0 5M13 3.5a6.5 6.5 0 0 1 0 9" : "M11 5.5a3.5 3.5 0 0 1 0 5";
+    }
+}
+
+component Dot inherits Label {
+    text: "·";
+    color: Theme.dim;
+}
+
+export component PlayerPane inherits Pane {
+    in property <image> cover;
+    in property <string> title;
+    in property <string> subtitle;
+    /// The list playing, for "from …".
+    in property <string> source;
+    /// Something is loaded (can play/pause).
+    in property <bool> has-track;
+    /// A queue exists (can skip).
+    in property <bool> has-queue;
+    in property <bool> is-playing;
+    in property <int> position-ms;
+    in property <int> duration-ms;
+    in-out property <float> volume;
+    in property <bool> shuffle;
+    in property <string> repeat: "off";
+    /// -1 while unknown.
+    in property <int> liked: -1;
+    in property <bool> radio-on;
+    in property <bool> radio-loading;
+    callback previous();
+    callback toggle-play();
+    callback next();
+    callback toggle-shuffle();
+    callback cycle-repeat();
+    callback toggle-like();
+    callback radio();
+    callback go-to-playing();
+    callback seek(int);
+    callback set-volume(float);
+
+    // While the bar is dragged, its position instead of playback's.
+    property <int> drag-ms: -1;
+    property <int> shown-ms: min(root.drag-ms >= 0 ? root.drag-ms : root.position-ms, root.duration-ms);
+    // The level to return to when unmuting.
+    property <float> unmute-to: 0.5;
+
+    function time(ms: int) -> string {
+        let total = floor(max(0, ms) / 1000);
+        let seconds = mod(total, 60);
+        return floor(total / 60) + ":" + (seconds < 10 ? "0" : "") + seconds;
+    }
+
+    function change-volume(level: float) {
+        root.volume = level;
+        root.set-volume(level);
+    }
+
+    height: 56px + 24px + 1px;
+    if Theme.pane-style == PaneStyle.minimal: Rectangle { y: 0; height: 1px; background: Theme.border; }
+    if Theme.pane-style == PaneStyle.boxed: PaneTitle {
+        x: 12px;
+        y: 0;
+        width: root.width - 24px;
+        top: 0;
+        text: "Playback";
+    }
+    HorizontalLayout {
+        y: 1px;
+        height: parent.height - 1px;
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 16px;
+        Rectangle {
+            width: 56px;
+            height: 56px;
+            background: Theme.select;
+            border-radius: Theme.radius / 2;
+            clip: true;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.cover;
+                image-fit: ImageFit.cover;
+            }
+        }
+        VerticalLayout {
+            width: 260px;
+            alignment: center;
+            Label {
+                text: root.title != "" ? root.title : "nothing playing";
+                font-weight: 700;
+            }
+            Label {
+                text: root.title != "" ? root.subtitle : "pick a track and double-click it";
+                color: Theme.muted;
+            }
+            if root.source != "": HorizontalLayout {
+                alignment: start;
+                TextButton {
+                    text: "♪ from " + root.source;
+                    ink: Theme.dim;
+                    font-size: Theme.font-size * 0.85;
+                    clicked => { root.go-to-playing(); }
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 4px;
+            HorizontalLayout {
+                alignment: start;
+                spacing: 16px;
+                IconButton { icon: Icon.previous; enabled: root.has-queue; clicked => { root.previous(); } }
+                IconButton {
+                    icon: root.is-playing ? Icon.pause : Icon.play;
+                    text: root.is-playing ? "pause" : "play";
+                    ink: Theme.accent;
+                    font-weight: 700;
+                    enabled: root.has-track;
+                    clicked => { root.toggle-play(); }
+                }
+                IconButton { icon: Icon.next; enabled: root.has-queue; clicked => { root.next(); } }
+                Dot { }
+                TextButton {
+                    text: "shuffle";
+                    ink: root.shuffle ? Theme.accent : Theme.dim;
+                    clicked => { root.toggle-shuffle(); }
+                }
+                TextButton {
+                    text: root.repeat == "one" ? "repeat one" : "repeat";
+                    ink: root.repeat != "off" ? Theme.accent : Theme.dim;
+                    clicked => { root.cycle-repeat(); }
+                }
+                Dot { }
+                TextButton {
+                    text: root.liked == 1 ? "♥ liked" : "♡ like";
+                    ink: root.liked == 1 ? Theme.accent : Theme.dim;
+                    enabled: root.liked >= 0;
+                    clicked => { root.toggle-like(); }
+                }
+                TextButton {
+                    text: root.radio-loading ? "◎ tuning…" : "◎ radio";
+                    ink: root.radio-on ? Theme.accent : Theme.dim;
+                    enabled: root.has-queue && !root.radio-loading;
+                    clicked => { root.radio(); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Label {
+                    horizontal-stretch: 0;
+                    text: root.time(root.shown-ms);
+                    color: Theme.muted;
+                }
+                Bar {
+                    horizontal-stretch: 1;
+                    enabled: root.has-track;
+                    // Moves on the same whole seconds as the time beside it, or freely while dragged.
+                    fraction: root.duration-ms == 0 ? 0 : (root.drag-ms >= 0 ? root.drag-ms : floor(root.shown-ms / 1000) * 1000) / root.duration-ms;
+                    changed(f) => { root.drag-ms = f * root.duration-ms; }
+                    committed(f) => {
+                        root.drag-ms = -1;
+                        root.seek(f * root.duration-ms);
+                    }
+                }
+                Label {
+                    horizontal-stretch: 0;
+                    text: root.time(root.duration-ms);
+                    color: Theme.muted;
+                }
+                Rectangle { width: 4px; }
+                Rectangle { width: 1px; background: Theme.border; }
+                Rectangle { width: 4px; }
+                Rectangle {
+                    width: 14px;
+                    VolumeIcon {
+                        level: root.volume;
+                        ink: mute.has-hover ? Theme.fg : Theme.muted;
+                    }
+                    mute := TouchArea {
+                        clicked => {
+                            if (root.volume > 0) {
+                                root.unmute-to = root.volume;
+                                root.change-volume(0);
+                            } else {
+                                root.change-volume(root.unmute-to);
+                            }
+                        }
+                    }
+                }
+                Bar {
+                    width: 12 * Theme.ch;
+                    fraction: root.volume;
+                    changed(f) => { root.change-volume(f); }
+                    committed(f) => { root.change-volume(f); }
+                }
+                Label {
+                    width: 4 * Theme.ch;
+                    text: round(root.volume * 100) + "%";
+                    color: Theme.muted;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+    }
+}

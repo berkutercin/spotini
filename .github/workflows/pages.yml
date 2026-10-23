@@ -1,0 +1,59 @@
+# Builds the website (site/, the live demo from demo/, and brand/) and publishes
+# it to GitHub Pages whenever main changes.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    # The demo includes the app's screens, so app changes rebuild it too.
+    paths: ["site/**", "demo/**", "app/ui/**", "app/src/**", "brand/**", "vite.site.config.ts", "package*.json", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: demo
+
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+
+      - name: Build the demo
+        run: sh demo/build.sh
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run site:build
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
